@@ -14,6 +14,8 @@ interface PeerDto {
   complete: import('node:buffer').Buffer
 }
 
+const PEER_REFRESH_INTERVAL_MS = 8 * 60 * 60 * 1000
+
 function mapPeerDto(dto: PeerDto): IPeersRepository.PeerInfo {
   return {
     id: Number(dto.id),
@@ -73,12 +75,25 @@ export class PostgresPeersRepository implements IPeersRepository {
     }
   }
 
+  /**
+   * Creates or updates a peer row. Unchanged peers are refreshed no more than once every 8h because
+   * `getByUsername()` rejects entries older than 24h.
+   *
+   * @see `packages/core/src/highlevel/storage/service/peers.ts` (`PeersService.getByUsername`)
+   */
   async store(peer: IPeersRepository.PeerInfo): Promise<void> {
     await this._driver.client.query(
-      `insert into ${this._table} (account, id, hash, is_min, usernames, updated, phone, complete)
+      `insert into ${this._table} as existing (account, id, hash, is_min, usernames, updated, phone, complete)
        values ($1, $2, $3, $4, $5, $6, $7, $8)
        on conflict (account, id) do update set
-          hash = $3, is_min = $4, usernames = $5, updated = $6, phone = $7, complete = $8`,
+          hash = excluded.hash, is_min = excluded.is_min, usernames = excluded.usernames,
+          updated = excluded.updated, phone = excluded.phone, complete = excluded.complete
+       where existing.hash is distinct from excluded.hash
+          or existing.is_min is distinct from excluded.is_min
+          or existing.usernames is distinct from excluded.usernames
+          or existing.phone is distinct from excluded.phone
+          or existing.complete is distinct from excluded.complete
+          or existing.updated <= excluded.updated - ${PEER_REFRESH_INTERVAL_MS}`,
       [
         this._account,
         peer.id,

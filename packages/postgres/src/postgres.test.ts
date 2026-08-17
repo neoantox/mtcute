@@ -33,6 +33,30 @@ if (process.env.TEST_ENV !== 'web' && process.env.WITH_POSTGRES_TESTS) {
     testPeersRepository(storage.peers, storage.driver)
     testRefMessagesRepository(storage.refMessages, storage.driver)
 
+    it('should skip unchanged peer writes and refresh them every eight hours', async () => {
+      const firstUpdated = 1_700_000_000_000
+      const peer: Parameters<typeof storage.peers.store>[0] = {
+        id: 987654321,
+        accessHash: '123456789',
+        isMin: false,
+        usernames: ['alice'],
+        updated: firstUpdated,
+        complete: new Uint8Array([1, 2, 3]),
+      }
+
+      await storage.peers.store(peer)
+      await storage.peers.store({ ...peer, updated: firstUpdated + 8 * 60 * 60 * 1000 - 1 })
+      expect(await storage.peers.getById(peer.id)).toEqual(peer)
+
+      const refreshed = { ...peer, updated: firstUpdated + 8 * 60 * 60 * 1000 }
+      await storage.peers.store(refreshed)
+      expect(await storage.peers.getById(peer.id)).toEqual(refreshed)
+
+      const changed = { ...refreshed, phone: '+123456789', updated: refreshed.updated + 1 }
+      await storage.peers.store(changed)
+      expect(await storage.peers.getById(peer.id)).toEqual(changed)
+    })
+
     afterAll(async () => {
       await storage.driver.destroy()
       expect(pglite.close).toHaveBeenCalled()
