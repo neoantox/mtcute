@@ -17,6 +17,45 @@ if (process.env.TEST_ENV !== 'web' && process.env.WITH_POSTGRES_TESTS) {
   const { dirname, join } = await import('node:path')
   const { PGLiteSocketServer } = await import('@electric-sql/pglite-socket')
 
+  function testPeerBatching(storage: InstanceType<typeof PostgresStorage>): void {
+    it('should use one query for a peer batch', async () => {
+      const peer: Parameters<typeof storage.peers.store>[0] = {
+        id: 987654322,
+        accessHash: '123456789',
+        isMin: false,
+        usernames: ['alice'],
+        updated: 1_700_000_000_000,
+        phone: '+123456789',
+        complete: new Uint8Array([1, 2, 3]),
+      }
+      const query = vi.spyOn(storage.driver.client, 'query')
+
+      await storage.peers.storeMany([])
+      expect(query).not.toHaveBeenCalled()
+
+      await storage.peers.storeMany([peer, { ...peer, id: peer.id + 1 }])
+      expect(query).toHaveBeenCalledOnce()
+      expect(query.mock.calls[0]?.[1]).toHaveLength(8)
+      expect(query.mock.calls[0]?.[0]).toContain('order by batch.id')
+      query.mockRestore()
+    })
+  }
+
+  function testRefMessageBatching(storage: InstanceType<typeof PostgresStorage>): void {
+    it('should use one query to delete reference messages for multiple peers', async () => {
+      const query = vi.spyOn(storage.driver.client, 'query')
+
+      await storage.refMessages.deleteByPeers([])
+      expect(query).not.toHaveBeenCalled()
+
+      await storage.refMessages.deleteByPeers([10, 30, 10])
+      expect(query).toHaveBeenCalledOnce()
+      expect(query.mock.calls[0]?.[0]).toContain('peer_id = any($2::bigint[])')
+      expect(query.mock.calls[0]?.[1]).toEqual([storage.driver.account, [10, 30, 10]])
+      query.mockRestore()
+    })
+  }
+
   describe('PostgresStorage (pglite)', async () => {
     const pglite = await PGlite.create()
     const storage = new PostgresStorage(pglite, { schema: 'mtcute_test', autoClose: true })
@@ -32,6 +71,8 @@ if (process.env.TEST_ENV !== 'web' && process.env.WITH_POSTGRES_TESTS) {
     testKeyValueRepository(storage.kv, storage.driver)
     testPeersRepository(storage.peers, storage.driver)
     testRefMessagesRepository(storage.refMessages, storage.driver)
+    testPeerBatching(storage)
+    testRefMessageBatching(storage)
 
     it('should skip unchanged peer writes and refresh them every eight hours', async () => {
       const firstUpdated = 1_700_000_000_000
@@ -90,6 +131,8 @@ if (process.env.TEST_ENV !== 'web' && process.env.WITH_POSTGRES_TESTS) {
     testKeyValueRepository(storage.kv, storage.driver)
     testPeersRepository(storage.peers, storage.driver)
     testRefMessagesRepository(storage.refMessages, storage.driver)
+    testPeerBatching(storage)
+    testRefMessageBatching(storage)
 
     afterAll(async () => {
       await storage.driver.destroy()

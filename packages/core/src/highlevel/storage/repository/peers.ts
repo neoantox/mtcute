@@ -29,6 +29,11 @@ export interface IPeersRepository {
   /** Store the given peer */
   store: (peer: IPeersRepository.PeerInfo) => MaybePromise<void>
   /**
+   * Store multiple peers. Must be equivalent to calling {@link store} in order.
+   * An empty list is a no-op. Duplicate IDs are allowed, with the last peer taking precedence.
+   */
+  storeMany?: (peers: readonly IPeersRepository.PeerInfo[]) => MaybePromise<void>
+  /**
    * Find a peer by their `id`.
    * Should return a "min" peer if one is available.
    */

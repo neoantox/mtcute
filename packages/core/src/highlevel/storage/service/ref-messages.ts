@@ -1,7 +1,7 @@
 import type { ServiceOptions } from '../../../storage/service/base.js'
 
 import type { IReferenceMessagesRepository } from '../repository/ref-messages.js'
-import { LruMap } from '@fuman/utils'
+import { asyncPool, LruMap } from '@fuman/utils'
 import { BaseService } from '../../../storage/service/base.js'
 
 export interface RefMessagesServiceOptions {
@@ -49,5 +49,15 @@ export class RefMessagesService extends BaseService {
   async deleteByPeer(peerId: number): Promise<void> {
     await this._refs.deleteByPeer(peerId)
     this._cache.delete(peerId)
+  }
+
+  async deleteByPeers(peerIds: readonly number[]): Promise<void> {
+    if (!this._refs.deleteByPeers) {
+      await asyncPool(peerIds, peerId => this.deleteByPeer(peerId))
+      return
+    }
+
+    await this._refs.deleteByPeers(peerIds)
+    for (const peerId of peerIds) this._cache.delete(peerId)
   }
 }

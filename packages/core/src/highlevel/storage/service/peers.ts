@@ -307,10 +307,16 @@ export class PeersService extends BaseService {
     this._pendingWritesTimer = null
 
     try {
-      await asyncPool(this._pendingWrites.values(), async (dto) => {
-        await this._peers.store(dto)
-        await this._refs.deleteByPeer(dto.id)
-      })
+      if (this._peers.storeMany) {
+        const peers = [...this._pendingWrites.values()]
+        await this._peers.storeMany(peers)
+        await this._refs.deleteByPeers(peers.map(dto => dto.id))
+      } else {
+        await asyncPool(this._pendingWrites.values(), async (dto) => {
+          await this._peers.store(dto)
+          await this._refs.deleteByPeer(dto.id)
+        })
+      }
 
       this._pendingWrites.clear()
     } catch (err) {

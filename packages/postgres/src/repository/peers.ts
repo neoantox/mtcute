@@ -82,9 +82,25 @@ export class PostgresPeersRepository implements IPeersRepository {
    * @see `packages/core/src/highlevel/storage/service/peers.ts` (`PeersService.getByUsername`)
    */
   async store(peer: IPeersRepository.PeerInfo): Promise<void> {
+    await this.storeMany([peer])
+  }
+
+  async storeMany(peers: readonly IPeersRepository.PeerInfo[]): Promise<void> {
+    if (peers.length === 0) return
+
+    // ON CONFLICT cannot update the same row twice, so keep the last peer for each ID.
+    const uniquePeers = new Map<number, IPeersRepository.PeerInfo>()
+    for (const peer of peers) uniquePeers.set(peer.id, peer)
+
+    const batch = [...uniquePeers.values()]
+
     await this._driver.client.query(
       `insert into ${this._table} as existing (account, id, hash, is_min, usernames, updated, phone, complete)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)
+       select $1::text, batch.*
+       from unnest($2::bigint[], $3::text[], $4::boolean[], $5::jsonb[],
+                   $6::bigint[], $7::text[], $8::bytea[])
+         as batch(id, hash, is_min, usernames, updated, phone, complete)
+       order by batch.id
        on conflict (account, id) do update set
           hash = excluded.hash, is_min = excluded.is_min, usernames = excluded.usernames,
           updated = excluded.updated, phone = excluded.phone, complete = excluded.complete
@@ -96,13 +112,13 @@ export class PostgresPeersRepository implements IPeersRepository {
           or existing.updated <= excluded.updated - ${PEER_REFRESH_INTERVAL_MS}`,
       [
         this._account,
-        peer.id,
-        peer.accessHash,
-        peer.isMin,
-        JSON.stringify(peer.usernames),
-        peer.updated,
-        peer.phone ?? null,
-        peer.complete,
+        batch.map(peer => peer.id),
+        batch.map(peer => peer.accessHash),
+        batch.map(peer => peer.isMin),
+        batch.map(peer => JSON.stringify(peer.usernames)),
+        batch.map(peer => peer.updated),
+        batch.map(peer => peer.phone ?? null),
+        batch.map(peer => peer.complete),
       ],
     )
   }

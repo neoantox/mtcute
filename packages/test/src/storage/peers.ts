@@ -28,6 +28,7 @@ function fixPeerInfo(peer: IPeersRepository.PeerInfo | null): IPeersRepository.P
 }
 
 export function testPeersRepository(repo: IPeersRepository, driver: IStorageDriver): void {
+  const storeMany = repo.storeMany?.bind(repo)
   const stubPeerUser: IPeersRepository.PeerInfo = {
     id: 123123,
     accessHash: '123|456',
@@ -92,5 +93,27 @@ export function testPeersRepository(repo: IPeersRepository, driver: IStorageDriv
 
       expect(fixPeerInfo(await repo.getById(123123))).toEqual(stubPeerMinUser)
     })
+
+    if (storeMany) {
+      it('should store multiple peers', async () => {
+        const updatedUser: IPeersRepository.PeerInfo = {
+          ...stubPeerUser,
+          usernames: ['some_user_2'],
+          phone: undefined,
+          updated: 888,
+          complete: new Uint8Array([1, 2, 3]),
+        }
+
+        await repo.deleteAll()
+        await storeMany([stubPeerUser, stubPeerChannel, updatedUser])
+        await storeMany([])
+        await driver.save?.()
+
+        expect(fixPeerInfo(await repo.getById(stubPeerUser.id))).toEqual(updatedUser)
+        expect(fixPeerInfo(await repo.getById(stubPeerChannel.id))).toEqual(stubPeerChannel)
+        expect(await repo.getByUsername('some_user')).toBeNull()
+        expect(fixPeerInfo(await repo.getByUsername('some_user_2'))).toEqual(updatedUser)
+      })
+    }
   })
 }

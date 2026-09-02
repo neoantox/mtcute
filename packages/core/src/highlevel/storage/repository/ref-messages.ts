@@ -18,5 +18,7 @@ export interface IReferenceMessagesRepository {
    */
   delete: (chatId: number, msgIds: number[]) => MaybePromise<void>
   deleteByPeer: (peerId: number) => MaybePromise<void>
+  /** Delete reference messages for the given peers in one operation, if supported. */
+  deleteByPeers?: (peerIds: readonly number[]) => MaybePromise<void>
   deleteAll: () => MaybePromise<void>
 }

@@ -12,6 +12,8 @@ export function fakeRefMessagesRepository(): IReferenceMessagesRepository {
 }
 
 export function testRefMessagesRepository(repo: IReferenceMessagesRepository, driver: IStorageDriver): void {
+  const deleteByPeers = repo.deleteByPeers?.bind(repo)
+
   describe('IReferenceMessagesRepository', () => {
     afterEach(() => repo.deleteAll())
 
@@ -71,5 +73,22 @@ export function testRefMessagesRepository(repo: IReferenceMessagesRepository, dr
         [60, 70],
       ])
     })
+
+    if (deleteByPeers) {
+      it('should delete reference messages for multiple peers', async () => {
+        await repo.store(10, 100, 1000)
+        await repo.store(20, 200, 2000)
+        await repo.store(30, 300, 3000)
+        await driver.save?.()
+
+        await deleteByPeers([])
+        await deleteByPeers([10, 30, 10])
+        await driver.save?.()
+
+        expect(await repo.getByPeer(10)).toEqual(null)
+        expect(await repo.getByPeer(20)).toEqual([200, 2000])
+        expect(await repo.getByPeer(30)).toEqual(null)
+      })
+    }
   })
 }

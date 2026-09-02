@@ -68,9 +68,15 @@ export class PostgresRefMessagesRepository implements IReferenceMessagesReposito
   }
 
   async deleteByPeer(peerId: number): Promise<void> {
+    await this.deleteByPeers([peerId])
+  }
+
+  async deleteByPeers(peerIds: readonly number[]): Promise<void> {
+    if (peerIds.length === 0) return
+
     await this._driver.client.query(
-      `delete from ${this._table} where account = $1 and peer_id = $2`,
-      [this._account, peerId],
+      `delete from ${this._table} where account = $1 and peer_id = any($2::bigint[])`,
+      [this._account, peerIds],
     )
   }
 
